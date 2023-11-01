@@ -1,0 +1,707 @@
+
+---
+apiVersion: scanning.apps.tanzu.vmware.com/v1beta1
+kind: ScanTemplate
+metadata:
+  name: trivy-blob-source-scan-template
+spec:
+  template:
+    containers:
+      - args:
+          - process
+          - -f
+          - /workspace
+        command:
+          - /aggregator
+        image: harbor.services.mydomain.com/tap/trivy-repo-scanning-bundle@sha256:a6819a77f2a2a4f64e3ac2950d684c0f25dfbf7cabe085670447f261b2b45715
+        imagePullPolicy: IfNotPresent
+        name: summary
+        volumeMounts:
+          - mountPath: /workspace
+            name: workspace
+            readOnly: true
+    initContainers:
+      - args:
+          - -c
+          - echo "$CA_CERT" > /ca-cert-secret/ca_cert.crt
+        command:
+          - /bin/bash
+        image: harbor.services.mydomain.com/tap/trivy-repo-scanning-bundle@sha256:82f8995d7f2f0ada00d435b68378e79ab66f58e06aa0ba0a8a67224025122447
+        imagePullPolicy: IfNotPresent
+        name: ca-cert
+        volumeMounts:
+          - mountPath: /ca-cert-secret
+            name: ca-cert-secret
+      - args:
+          - -c
+          - mkdir /workspace/source
+        command:
+          - /bin/bash
+        image: harbor.services.mydomain.com/tap/trivy-repo-scanning-bundle@sha256:82f8995d7f2f0ada00d435b68378e79ab66f58e06aa0ba0a8a67224025122447
+        imagePullPolicy: IfNotPresent
+        name: initialize-scanner-workspace
+        volumeMounts:
+          - mountPath: /workspace
+            name: workspace
+            readOnly: false
+      - args:
+          - -c
+          - ./source/untar-gitrepository.sh $REPOSITORY /workspace/source
+        command:
+          - /bin/bash
+        image: harbor.services.mydomain.com/tap/trivy-repo-scanning-bundle@sha256:82f8995d7f2f0ada00d435b68378e79ab66f58e06aa0ba0a8a67224025122447
+        imagePullPolicy: IfNotPresent
+        name: repo
+        volumeMounts:
+          - mountPath: /workspace
+            name: workspace
+            readOnly: false
+      - args:
+          - -c
+          - ./source/scan-source.sh /workspace/source/scan.json /workspace/source/out.yaml /workspace/source/repo blob
+        command:
+          - /bin/bash
+        env:
+          - name: SSL_CERT_DIR
+            value: /etc/pki/tls/certs:/ca-cert-secret
+        image: harbor.services.mydomain.com/tap/trivy-repo-scanning-bundle@sha256:84e56e7e91b877a085e6d59b8b3d68785b3e2d709b633c0e0f29377d6da0997e
+        imagePullPolicy: IfNotPresent
+        name: scan-plugin
+        resources:
+          limits:
+            cpu: 1000m
+          requests:
+            cpu: 250m
+            memory: 128Mi
+        volumeMounts:
+          - mountPath: /workspace
+            name: workspace
+            readOnly: false
+          - mountPath: /.cache
+            name: cache
+            readOnly: false
+          - mountPath: /ca-cert-secret
+            name: ca-cert-secret
+            readOnly: true
+      - args:
+          - -c
+          - |
+            set -euo pipefail
+            if [[ -z ${METADATA_STORE_ACCESS_TOKEN:-""} ]]
+            then
+              METADATA_STORE_ACCESS_TOKEN=$(cat /var/run/secrets/kubernetes.io/serviceaccount/token)
+            fi
+            /insight config set-target $METADATA_STORE_URL --ca-cert /metadata-store/ca.crt --access-token $METADATA_STORE_ACCESS_TOKEN
+        command:
+          - bash
+        env:
+          - name: METADATA_STORE_URL
+            value: https://metadata-store.view.mydomain.com
+          - name: METADATA_STORE_ACCESS_TOKEN
+            valueFrom:
+              secretKeyRef:
+                key: auth_token
+                name: store-auth-token
+        image: harbor.services.mydomain.com/tap/trivy-repo-scanning-bundle@sha256:60cb4ca029c91155c19ee47bb3464505b24a8b55790ef1006a4be0eed70ef3ec
+        imagePullPolicy: IfNotPresent
+        name: metadata-store-plugin-config
+        volumeMounts:
+          - mountPath: /workspace
+            name: workspace
+            readOnly: false
+          - mountPath: /.config
+            name: insight-config
+            readOnly: false
+          - mountPath: /metadata-store
+            name: metadata-store-ca-cert
+            readOnly: true
+      - args:
+          - source
+          - add
+          - --cyclonedxtype
+          - xml
+          - --path
+          - /workspace/source/scan.xml
+        command:
+          - /send-scan-results.sh
+        image: harbor.services.mydomain.com/tap/trivy-repo-scanning-bundle@sha256:60cb4ca029c91155c19ee47bb3464505b24a8b55790ef1006a4be0eed70ef3ec
+        imagePullPolicy: IfNotPresent
+        name: metadata-store-plugin
+        volumeMounts:
+          - mountPath: /workspace
+            name: workspace
+            readOnly: false
+          - mountPath: /.config
+            name: insight-config
+            readOnly: false
+      - args:
+          - check
+          - --policy
+          - $(POLICY)
+          - --scan-results
+          - /workspace/source/scan.xml
+          - --parser
+          - xml
+          - --format
+          - yaml
+          - --output
+          - /workspace/compliance-plugin/out.yaml
+        command:
+          - /compliance
+        image: harbor.services.mydomain.com/tap/trivy-repo-scanning-bundle@sha256:537dcd7befe4d700d65715637a5706352448266458ab82ff4c5ce48318880154
+        imagePullPolicy: IfNotPresent
+        name: compliance-plugin
+        volumeMounts:
+          - mountPath: /workspace
+            name: workspace
+            readOnly: false
+    restartPolicy: Never
+    securityContext:
+      runAsNonRoot: true
+    serviceAccountName: trivy-scanner
+    volumes:
+      - emptyDir: {}
+        name: workspace
+      - emptyDir: {}
+        name: insight-config
+      - emptyDir: {}
+        name: cache
+      - emptyDir: {}
+        name: ca-cert-secret
+      - name: metadata-store-ca-cert
+        secret:
+          secretName: store-ca-cert
+---
+apiVersion: scanning.apps.tanzu.vmware.com/v1beta1
+kind: ScanTemplate
+metadata:
+  name: trivy-private-image-scan-template
+spec:
+  template:
+    containers:
+      - args:
+          - process
+          - -f
+          - /workspace
+        command:
+          - /aggregator
+        image: harbor.services.mydomain.com/tap/trivy-repo-scanning-bundle@sha256:a6819a77f2a2a4f64e3ac2950d684c0f25dfbf7cabe085670447f261b2b45715
+        imagePullPolicy: IfNotPresent
+        name: summary
+        volumeMounts:
+          - mountPath: /workspace
+            name: workspace
+            readOnly: true
+    initContainers:
+      - args:
+          - -c
+          - echo "$CA_CERT" > /ca-cert-secret/ca_cert.crt
+        command:
+          - /bin/bash
+        image: harbor.services.mydomain.com/tap/trivy-repo-scanning-bundle@sha256:82f8995d7f2f0ada00d435b68378e79ab66f58e06aa0ba0a8a67224025122447
+        imagePullPolicy: IfNotPresent
+        name: ca-cert
+        volumeMounts:
+          - mountPath: /ca-cert-secret
+            name: ca-cert-secret
+      - args:
+          - -c
+          - ./image/scan-image.sh /workspace /workspace/scan.json true
+        command:
+          - /bin/bash
+        env:
+          - name: DOCKER_CONFIG
+            value: /.docker
+          - name: SSL_CERT_DIR
+            value: /etc/pki/tls/certs:/ca-cert-secret
+        image: harbor.services.mydomain.com/tap/trivy-repo-scanning-bundle@sha256:84e56e7e91b877a085e6d59b8b3d68785b3e2d709b633c0e0f29377d6da0997e
+        imagePullPolicy: IfNotPresent
+        name: scan-plugin
+        resources:
+          limits:
+            cpu: 1000m
+          requests:
+            cpu: 250m
+            memory: 128Mi
+        volumeMounts:
+          - mountPath: /workspace
+            name: workspace
+            readOnly: false
+          - mountPath: /.cache
+            name: cache
+            readOnly: false
+          - mountPath: /ca-cert-secret
+            name: ca-cert-secret
+            readOnly: true
+      - args:
+          - -c
+          - |
+            set -euo pipefail
+            if [[ -z ${METADATA_STORE_ACCESS_TOKEN:-""} ]]
+            then
+              METADATA_STORE_ACCESS_TOKEN=$(cat /var/run/secrets/kubernetes.io/serviceaccount/token)
+            fi
+            /insight config set-target $METADATA_STORE_URL --ca-cert /metadata-store/ca.crt --access-token $METADATA_STORE_ACCESS_TOKEN
+        command:
+          - bash
+        env:
+          - name: METADATA_STORE_URL
+            value: https://metadata-store.view.mydomain.com
+          - name: METADATA_STORE_ACCESS_TOKEN
+            valueFrom:
+              secretKeyRef:
+                key: auth_token
+                name: store-auth-token
+        image: harbor.services.mydomain.com/tap/trivy-repo-scanning-bundle@sha256:60cb4ca029c91155c19ee47bb3464505b24a8b55790ef1006a4be0eed70ef3ec
+        imagePullPolicy: IfNotPresent
+        name: metadata-store-plugin-config
+        volumeMounts:
+          - mountPath: /workspace
+            name: workspace
+            readOnly: false
+          - mountPath: /.config
+            name: insight-config
+            readOnly: false
+          - mountPath: /metadata-store
+            name: metadata-store-ca-cert
+            readOnly: true
+      - args:
+          - image
+          - add
+          - --cyclonedxtype
+          - xml
+          - --path
+          - /workspace/scan.xml
+        command:
+          - /send-scan-results.sh
+        image: harbor.services.mydomain.com/tap/trivy-repo-scanning-bundle@sha256:60cb4ca029c91155c19ee47bb3464505b24a8b55790ef1006a4be0eed70ef3ec
+        imagePullPolicy: IfNotPresent
+        name: metadata-store-plugin
+        volumeMounts:
+          - mountPath: /workspace
+            name: workspace
+            readOnly: false
+          - mountPath: /.config
+            name: insight-config
+            readOnly: false
+      - args:
+          - check
+          - --policy
+          - $(POLICY)
+          - --scan-results
+          - /workspace/scan.xml
+          - --parser
+          - xml
+          - --format
+          - yaml
+          - --output
+          - /workspace/compliance-plugin/out.yaml
+        command:
+          - /compliance
+        image: harbor.services.mydomain.com/tap/trivy-repo-scanning-bundle@sha256:537dcd7befe4d700d65715637a5706352448266458ab82ff4c5ce48318880154
+        imagePullPolicy: IfNotPresent
+        name: compliance-plugin
+        volumeMounts:
+          - mountPath: /workspace
+            name: workspace
+            readOnly: false
+    restartPolicy: Never
+    securityContext:
+      runAsNonRoot: true
+    serviceAccountName: trivy-scanner
+    volumes:
+      - emptyDir: {}
+        name: workspace
+      - emptyDir: {}
+        name: insight-config
+      - emptyDir: {}
+        name: cache
+      - emptyDir: {}
+        name: ca-cert-secret
+      - name: metadata-store-ca-cert
+        secret:
+          secretName: store-ca-cert
+---
+
+apiVersion: scanning.apps.tanzu.vmware.com/v1beta1
+kind: ScanTemplate
+metadata:
+  name: trivy-public-image-scan-template
+spec:
+  template:
+    containers:
+      - args:
+          - process
+          - -f
+          - /workspace
+        command:
+          - /aggregator
+        image: harbor.services.mydomain.com/tap/trivy-repo-scanning-bundle@sha256:a6819a77f2a2a4f64e3ac2950d684c0f25dfbf7cabe085670447f261b2b45715
+        imagePullPolicy: IfNotPresent
+        name: summary
+        volumeMounts:
+          - mountPath: /workspace
+            name: workspace
+            readOnly: true
+    initContainers:
+      - args:
+          - -c
+          - echo "$CA_CERT" > /ca-cert-secret/ca_cert.crt
+        command:
+          - /bin/bash
+        image: harbor.services.mydomain.com/tap/trivy-repo-scanning-bundle@sha256:82f8995d7f2f0ada00d435b68378e79ab66f58e06aa0ba0a8a67224025122447
+        imagePullPolicy: IfNotPresent
+        name: ca-cert
+        volumeMounts:
+          - mountPath: /ca-cert-secret
+            name: ca-cert-secret
+      - args:
+          - -c
+          - ./image/scan-image.sh /workspace /workspace/scan.json
+        command:
+          - /bin/bash
+        env:
+          - name: SSL_CERT_DIR
+            value: /etc/pki/tls/certs:/ca-cert-secret
+        image: harbor.services.mydomain.com/tap/trivy-repo-scanning-bundle@sha256:84e56e7e91b877a085e6d59b8b3d68785b3e2d709b633c0e0f29377d6da0997e
+        imagePullPolicy: IfNotPresent
+        name: scan-plugin
+        resources:
+          limits:
+            cpu: 1000m
+          requests:
+            cpu: 250m
+            memory: 128Mi
+        volumeMounts:
+          - mountPath: /workspace
+            name: workspace
+            readOnly: false
+          - mountPath: /.cache
+            name: cache
+            readOnly: false
+          - mountPath: /ca-cert-secret
+            name: ca-cert-secret
+            readOnly: true
+      - args:
+          - -c
+          - |
+            set -euo pipefail
+            if [[ -z ${METADATA_STORE_ACCESS_TOKEN:-""} ]]
+            then
+              METADATA_STORE_ACCESS_TOKEN=$(cat /var/run/secrets/kubernetes.io/serviceaccount/token)
+            fi
+            /insight config set-target $METADATA_STORE_URL --ca-cert /metadata-store/ca.crt --access-token $METADATA_STORE_ACCESS_TOKEN
+        command:
+          - bash
+        env:
+          - name: METADATA_STORE_URL
+            value: https://metadata-store.view.mydomain.com
+          - name: METADATA_STORE_ACCESS_TOKEN
+            valueFrom:
+              secretKeyRef:
+                key: auth_token
+                name: store-auth-token
+        image: harbor.services.mydomain.com/tap/trivy-repo-scanning-bundle@sha256:60cb4ca029c91155c19ee47bb3464505b24a8b55790ef1006a4be0eed70ef3ec
+        imagePullPolicy: IfNotPresent
+        name: metadata-store-plugin-config
+        volumeMounts:
+          - mountPath: /workspace
+            name: workspace
+            readOnly: false
+          - mountPath: /.config
+            name: insight-config
+            readOnly: false
+          - mountPath: /metadata-store
+            name: metadata-store-ca-cert
+            readOnly: true
+      - args:
+          - image
+          - add
+          - --cyclonedxtype
+          - xml
+          - --path
+          - /workspace/scan.xml
+        command:
+          - /send-scan-results.sh
+        image: harbor.services.mydomain.com/tap/trivy-repo-scanning-bundle@sha256:60cb4ca029c91155c19ee47bb3464505b24a8b55790ef1006a4be0eed70ef3ec
+        imagePullPolicy: IfNotPresent
+        name: metadata-store-plugin
+        volumeMounts:
+          - mountPath: /workspace
+            name: workspace
+            readOnly: false
+          - mountPath: /.config
+            name: insight-config
+            readOnly: false
+      - args:
+          - check
+          - --policy
+          - $(POLICY)
+          - --scan-results
+          - /workspace/scan.xml
+          - --parser
+          - xml
+          - --format
+          - yaml
+          - --output
+          - /workspace/compliance-plugin/out.yaml
+        command:
+          - /compliance
+        image: harbor.services.mydomain.com/tap/trivy-repo-scanning-bundle@sha256:537dcd7befe4d700d65715637a5706352448266458ab82ff4c5ce48318880154
+        imagePullPolicy: IfNotPresent
+        name: compliance-plugin
+        volumeMounts:
+          - mountPath: /workspace
+            name: workspace
+            readOnly: false
+    restartPolicy: Never
+    securityContext:
+      runAsNonRoot: true
+    serviceAccountName: trivy-scanner
+    volumes:
+      - emptyDir: {}
+        name: workspace
+      - emptyDir: {}
+        name: insight-config
+      - emptyDir: {}
+        name: cache
+      - emptyDir: {}
+        name: ca-cert-secret
+      - name: metadata-store-ca-cert
+        secret:
+          secretName: store-ca-cert
+---
+
+apiVersion: scanning.apps.tanzu.vmware.com/v1beta1
+kind: ScanTemplate
+metadata:
+  name: trivy-public-source-scan-template
+spec:
+  template:
+    containers:
+    - args:
+      - process
+      - -f
+      - /workspace
+      command:
+      - /aggregator
+      image: harbor.services.mydomain.com/tap/trivy-repo-scanning-bundle@sha256:a6819a77f2a2a4f64e3ac2950d684c0f25dfbf7cabe085670447f261b2b45715
+      imagePullPolicy: IfNotPresent
+      name: summary
+      volumeMounts:
+      - mountPath: /workspace
+        name: workspace
+        readOnly: true
+    initContainers:
+    - args:
+      - -c
+      - echo "$CA_CERT" > /ca-cert-secret/ca_cert.crt
+      command:
+      - /bin/bash
+      image: harbor.services.mydomain.com/tap/trivy-repo-scanning-bundle@sha256:82f8995d7f2f0ada00d435b68378e79ab66f58e06aa0ba0a8a67224025122447
+      imagePullPolicy: IfNotPresent
+      name: ca-cert
+      volumeMounts:
+      - mountPath: /ca-cert-secret
+        name: ca-cert-secret
+    - args:
+      - -c
+      - mkdir /workspace/source
+      command:
+      - /bin/bash
+      image: harbor.services.mydomain.com/tap/trivy-repo-scanning-bundle@sha256:82f8995d7f2f0ada00d435b68378e79ab66f58e06aa0ba0a8a67224025122447
+      imagePullPolicy: IfNotPresent
+      name: initialize-scanner-workspace
+      volumeMounts:
+      - mountPath: /workspace
+        name: workspace
+        readOnly: false
+    - args:
+      - -c
+      - ./source/clone-repo.sh /workspace/source/repo $(REPOSITORY)
+      command:
+      - /bin/bash
+      image: harbor.services.mydomain.com/tap/trivy-repo-scanning-bundle@sha256:84e56e7e91b877a085e6d59b8b3d68785b3e2d709b633c0e0f29377d6da0997e
+      imagePullPolicy: IfNotPresent
+      name: repo
+      volumeMounts:
+      - mountPath: /workspace
+        name: workspace
+        readOnly: false
+    - args:
+      - -c
+      - ./source/scan-source.sh /workspace/source/scan.json /workspace/source/out.yaml
+        /workspace/source/repo git
+      command:
+      - /bin/bash
+      env:
+      - name: SSL_CERT_DIR
+        value: /etc/pki/tls/certs:/ca-cert-secret
+      image: harbor.services.mydomain.com/tap/trivy-repo-scanning-bundle@sha256:84e56e7e91b877a085e6d59b8b3d68785b3e2d709b633c0e0f29377d6da0997e
+      imagePullPolicy: IfNotPresent
+      name: scan-plugin
+      resources:
+        limits:
+          cpu: 1000m
+        requests:
+          cpu: 250m
+          memory: 128Mi
+      volumeMounts:
+      - mountPath: /workspace
+        name: workspace
+        readOnly: false
+      - mountPath: /.cache
+        name: cache
+        readOnly: false
+      - mountPath: /ca-cert-secret
+        name: ca-cert-secret
+        readOnly: true
+    - args:
+      - -c
+      - |
+        set -euo pipefail
+        if [[ -z ${METADATA_STORE_ACCESS_TOKEN:-""} ]]
+        then
+          METADATA_STORE_ACCESS_TOKEN=$(cat /var/run/secrets/kubernetes.io/serviceaccount/token)
+        fi
+        /insight config set-target $METADATA_STORE_URL --ca-cert /metadata-store/ca.crt --access-token $METADATA_STORE_ACCESS_TOKEN
+      command:
+      - bash
+      env:
+      - name: METADATA_STORE_URL
+        value: https://metadata-store.view.mydomain.com
+      - name: METADATA_STORE_ACCESS_TOKEN
+        valueFrom:
+          secretKeyRef:
+            key: auth_token
+            name: store-auth-token
+      image: harbor.services.mydomain.com/tap/trivy-repo-scanning-bundle@sha256:60cb4ca029c91155c19ee47bb3464505b24a8b55790ef1006a4be0eed70ef3ec
+      imagePullPolicy: IfNotPresent
+      name: metadata-store-plugin-config
+      volumeMounts:
+      - mountPath: /workspace
+        name: workspace
+        readOnly: false
+      - mountPath: /.config
+        name: insight-config
+        readOnly: false
+      - mountPath: /metadata-store
+        name: metadata-store-ca-cert
+        readOnly: true
+    - args:
+      - source
+      - add
+      - --cyclonedxtype
+      - xml
+      - --path
+      - /workspace/source/scan.xml
+      command:
+      - /send-scan-results.sh
+      image: harbor.services.mydomain.com/tap/trivy-repo-scanning-bundle@sha256:60cb4ca029c91155c19ee47bb3464505b24a8b55790ef1006a4be0eed70ef3ec
+      imagePullPolicy: IfNotPresent
+      name: metadata-store-plugin
+      volumeMounts:
+      - mountPath: /workspace
+        name: workspace
+        readOnly: false
+      - mountPath: /.config
+        name: insight-config
+        readOnly: false
+    - args:
+      - check
+      - --policy
+      - $(POLICY)
+      - --scan-results
+      - /workspace/source/scan.xml
+      - --parser
+      - xml
+      - --format
+      - yaml
+      - --output
+      - /workspace/compliance-plugin/out.yaml
+      command:
+      - /compliance
+      image: harbor.services.mydomain.com/tap/trivy-repo-scanning-bundle@sha256:537dcd7befe4d700d65715637a5706352448266458ab82ff4c5ce48318880154
+      imagePullPolicy: IfNotPresent
+      name: compliance-plugin
+      volumeMounts:
+      - mountPath: /workspace
+        name: workspace
+        readOnly: false
+    restartPolicy: Never
+    securityContext:
+      runAsNonRoot: true
+    serviceAccountName: trivy-scanner
+    volumes:
+    - emptyDir: {}
+      name: workspace
+    - emptyDir: {}
+      name: insight-config
+    - emptyDir: {}
+      name: cache
+    - emptyDir: {}
+      name: ca-cert-secret
+    - name: metadata-store-ca-cert
+      secret:
+        secretName: store-ca-cert
+---
+
+---
+apiVersion: scanning.apps.tanzu.vmware.com/v1beta1
+kind: ScanPolicy
+metadata:
+   name: trivy-scan-policy
+   labels:
+      app.kubernetes.io/part-of: enable-in-gui
+spec:
+   regoFile: |
+      package main
+
+      import future.keywords.in
+      import future.keywords.every
+
+      # Accepted Values: "critical", "high", "medium", "low", unknown"
+      notAllowedSeverities := ["critical"]
+      notAllowedSet := {x | x := notAllowedSeverities[_]}
+      ignoreCves := ["CVE-2016-1000027", "CVE-2022-25857", "CVE-2023-20860", "CVE-2023-20863", "CVE-2023-20873", "CVE-2023-20883", "CVE-2023-28709", "CVE-2022-1471", "CVE-2022-48522"]
+
+      isSafe(match) {
+        severities := { e | e := match.ratings.rating.severity } | { e | e := match.ratings.rating[_].severity }
+        every severity in severities {
+            not severity in notAllowedSet
+        }
+      }
+
+      isIgnored(match) {
+        match.id in ignoreCves
+      }
+
+      deny[msg] {
+        notAllowedVulnerabilities := { vulnerability |
+          vulnerabilities := {e | e := input.bom.vulnerabilities.vulnerability} | {e | e := input.bom.vulnerabilities.vulnerability[_]}
+          some vulnerability in vulnerabilities
+          not isIgnored(vulnerability)
+          not isSafe(vulnerability)
+        }
+        formattedVulnerabilityMessages := { message |
+          some vulnerability in notAllowedVulnerabilities
+          ratings := {e | e := vulnerability.ratings.rating.severity} | {e | e := vulnerability.ratings.rating[_].severity}
+          formattedRatings := concat(", ", ratings)
+          affectedComponents := {e | e := vulnerability.affects.target.ref} | {e | e := vulnerability.affects.target[_].ref}
+          formattedComponents := concat("\\n", affectedComponents)
+          message = sprintf("CVE: %s \\nRatings: %s\\nAffected Components: \\n%s", [vulnerability.id, formattedRatings, formattedComponents])
+        }
+        some formattedVulnerabilityMessage in formattedVulnerabilityMessages
+        msg := formattedVulnerabilityMessage
+      }
+---
+apiVersion: v1
+imagePullSecrets:
+- name: scanner-secret-ref
+kind: ServiceAccount
+metadata:
+  name: trivy-scanner
+secrets:
+- name: registries-credentials
+- name: store-ca-cert
+- name: store-auth-token

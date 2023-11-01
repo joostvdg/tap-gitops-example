@@ -1,0 +1,41 @@
+kind: Role
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: kapp-controller-role
+  namespace: cert-manager
+rules:
+- apiGroups: [""]
+  resources: ["configmaps", "services", "secrets", "pods", "serviceaccounts"]
+  verbs: ["*"]
+- apiGroups: ["apps"]
+  resources: ["deployments", "replicasets"]
+  verbs: ["*"]
+- apiGroups: ["cert-manager.io"]
+  resources: ["*"]
+  verbs: ["*"]
+---
+kind: RoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: kapp-controller-role-binding
+  namespace: cert-manager
+subjects:
+- kind: ServiceAccount
+  name: kapp-controller-sa
+  namespace: tanzu-packages
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: kapp-controller-role
+---
+apiVersion: packaging.carvel.dev/v1alpha1
+kind: PackageInstall
+metadata:
+  name: cert-manager
+  namespace: tanzu-packages
+spec:
+  serviceAccountName: kapp-controller-sa
+  packageRef:
+    refName: cert-manager.tanzu.vmware.com
+    versionSelection:
+      constraints: 1.10.1+vmware.1-tkg.2

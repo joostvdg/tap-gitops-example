@@ -1,0 +1,108 @@
+apiVersion: v1
+kind: Secret
+metadata:
+  name: config-writer-and-pull-requester-template-override
+  namespace: tap-install #! namespace where tap is installed
+stringData:
+  patch.yaml: |
+    #@ load("@ytt:overlay", "overlay")
+
+    #@overlay/match by=overlay.subset({"kind":"ClusterTemplate", "metadata":{ "name": "config-writer-and-pull-requester-template"}}),expects="1+"
+    ---
+    spec:
+      ytt: |
+        #@ load("@ytt:data", "data")
+        #@ load("@ytt:json", "json")
+        #@ load("@ytt:base64", "base64")
+
+        #@ def merge_labels(fixed_values):
+        #@   labels = {}
+        #@   if hasattr(data.values.workload.metadata, "labels"):
+        #@     labels.update(data.values.workload.metadata.labels)
+        #@   end
+        #@   labels.update(fixed_values)
+        #@   return labels
+        #@ end
+
+        #@ environment=""
+        #@ team=""
+
+        #@ for val in data.values.workload.spec.params:
+        #@   if val.name == "gitops_team":
+        #@     team=val.value
+        #@   end
+        #@   if val.name == "gitops_env":
+        #@     environment=val.value
+        #@   end
+        #@ end
+
+        ---
+        apiVersion: carto.run/v1alpha1
+        kind: Runnable
+        metadata:
+          name: #@ data.values.workload.metadata.name + "-config-writer-pull-requester"
+          labels: #@ merge_labels({ "app.kubernetes.io/component": "config-writer-pull-requester" })
+        spec:
+          #@ if/end hasattr(data.values.workload.spec, "serviceAccountName"):
+          serviceAccountName: #@ data.values.workload.spec.serviceAccountName
+
+          runTemplateRef:
+            name: commit-and-pr-pipelinerun
+
+          inputs:
+            serviceAccount: #@ data.values.params.serviceAccount
+            git_server_kind: #@ data.values.params.gitops_server_kind
+            git_server_address: #@ data.values.params.gitops_server_address
+            commit_branch: #@ data.values.params.gitops_commit_branch
+            pull_request_title: #@ data.values.params.gitops_pull_request_title
+            pull_request_body: #@ data.values.params.gitops_pull_request_body
+            repository_owner: #@ data.values.params.gitops_repository_owner
+            repository_name: #@ data.values.params.gitops_repository_name
+            base_branch: #@ data.values.params.gitops_branch
+            git_user_name: #@ data.values.params.gitops_user_name
+            git_user_email: #@ data.values.params.gitops_user_email
+            git_commit_message: #@ data.values.params.gitops_commit_message
+            git_files: #@ base64.encode(json.encode(data.values.config))
+            sub_path: #@ "teams/" + team + "/" + environment + "/" + data.values.workload.metadata.name
+
+    #@overlay/match by=overlay.subset({"kind":"ClusterTask", "metadata":{ "name": "commit-and-pr"}}),expects="1+"
+    ---
+    spec:
+      steps:
+        #@overlay/match by=overlay.subset({"name": "ensure-base-branch-exists"}), expects="1+"
+        - name: ensure-base-branch-exists
+          #@overlay/match missing_ok=True
+          image: harbor.services.mydomain.com/other/jx-scm:0.2.0
+
+        #@overlay/match by=overlay.subset({"name": "git-clone-and-push"}), expects="1+"
+        - name: git-clone-and-push
+          #@overlay/match missing_ok=True
+          image: harbor.services.mydomain.com/other/jx-scm:0.2.0
+
+        #@overlay/match by=overlay.subset({"name": "open-pr"}), expects="1+"
+        - name: open-pr
+          #@overlay/match missing_ok=True
+          image: harbor.services.mydomain.com/other/jx-scm:0.2.0
+
+    #@overlay/match by=overlay.subset({"kind":"ClusterRunTemplate", "metadata":{ "name": "tekton-source-pipelinerun"}}),expects="1+"
+    ---
+    spec:
+      template:
+        spec:
+          #@overlay/match missing_ok=True
+          podTemplate:
+            securityContext:
+              fsGroup: 65532
+          #@overlay/match missing_ok=True
+          workspaces:
+          - name: maven-settings
+            emptyDir: {}
+          - name: shared-workspace
+            volumeClaimTemplate:
+              spec:
+                accessModes:
+                - ReadWriteOnce
+                resources:
+                  requests:
+                    storage: 500Mi
+                volumeMode: Filesystem

@@ -1,0 +1,45 @@
+#@ load("@ytt:data", "data")
+#@ load("@ytt:base64", "base64")
+#@ load("@ytt:yaml", "yaml")
+---
+#! GIT SECRET
+apiVersion: v1
+kind: Secret
+metadata:
+  name: apps
+  namespace: apps
+stringData:
+  caFile: #@ data.values.other.sensitive_values.teams.orange.git.ca_cert_data
+  password: #@ data.values.other.sensitive_values.teams.orange.git.password
+  username: #@ data.values.other.sensitive_values.teams.orange.git.username
+---
+
+---
+#! GIT SECRET
+apiVersion: v1
+kind: Secret
+metadata:
+  name: apps-gitlab
+  namespace: apps
+stringData:
+  caFile: #@ data.values.other.sensitive_values.teams.orange.git.ca_cert_data
+  password: #@ data.values.other.sensitive_values.teams.orange.gitlab.password
+  username: #@ data.values.other.sensitive_values.teams.orange.gitlab.username
+---
+#! GIT REPOSITORY
+---
+apiVersion: source.toolkit.fluxcd.io/v1beta2
+kind: GitRepository
+metadata:
+  name: apps
+  namespace: apps
+spec:
+  gitImplementation: go-git
+  ignore: |
+    !.git
+  interval: 1m0s
+  ref:
+    branch: main
+  secretRef:
+    name: apps-gitlab
+  url: https://gitlab.services.mydomain.com/root/tap-apps.git

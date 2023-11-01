@@ -1,0 +1,81 @@
+apiVersion: carto.run/v1alpha1
+kind: ClusterDelivery
+metadata:
+  name: delivery-helm
+spec:
+  resources:
+    - deployment:
+        resource: source-provider
+      name: deployer
+      params:
+        - default: default
+          name: serviceAccount
+      templateRef:
+        kind: ClusterDeploymentTemplate
+        name: helm-deploy
+  selector:
+    app.tanzu.vmware.com/deliverable-type: helm
+---
+apiVersion: carto.run/v1alpha1
+kind: ClusterDeploymentTemplate
+metadata:
+  name: helm-deploy
+spec:
+  healthRule:
+    multiMatch:
+      healthy:
+        matchConditions:
+          - status: "True"
+            type: ReconcileSucceeded
+      unhealthy:
+        matchFields:
+          - key: status.conditions[?(@.type=="ReconcileFailed")].status
+            messagePath: .status.usefulErrorMessage
+            operator: In
+            values:
+              - "True"
+  lifecycle: mutable
+  observedCompletion:
+    failed:
+      key: .status.conditions[?(@.type=="ReconcileSucceeded")].status
+      value: "False"
+    succeeded:
+      key: .status.conditions[?(@.type=="ReconcileSucceeded")].status
+      value: "True"
+  params:
+    - default: default
+      name: serviceAccount
+  ytt: |
+    #@ load("@ytt:data", "data")
+    #@ load("@ytt:assert", "assert")
+
+    #@ def merge_labels(fixed_values):
+    #@   labels = {}
+    #@   if hasattr(data.values.deliverable.metadata, "labels"):
+    #@     labels.update(data.values.deliverable.metadata.labels)
+    #@   end
+    #@   labels.update(fixed_values)
+    #@   return labels
+    #@ end
+
+    ---
+    apiVersion: helm.toolkit.fluxcd.io/v2beta1
+    kind: HelmRelease
+    metadata:
+      name: #@ data.values.deliverable.metadata.name
+      labels: #@ merge_labels({ "app.kubernetes.io/component": "deploy" })
+    spec:
+      interval: 5m
+      chart:
+        spec:
+          chart: #@ data.values.params.chart
+          version: #@ data.values.params.chartVersion
+          sourceRef:
+            kind: HelmRepository
+            name: #@ data.values.params.helmRepo
+            namespace: #@ data.values.params.helmRepoNamespace
+          interval: 5m
+      valuesFrom:
+        - kind: ConfigMap
+          name: #@ data.values.params.valuesConfigMap
+          valuesKey: values.yaml

@@ -1,0 +1,30 @@
+apiVersion: policy.sigstore.dev/v1beta1
+kind: ClusterImagePolicy
+metadata:
+  name: image-policy-exceptions
+spec:
+  images:
+  - glob: harbor.services.mydomain.com/tap/*
+  - glob: harbor.services.mydomain.com/buildservice/*
+  - glob: harbor.services.mydomain.com/other/*
+  - glob: harbor.services.mydomain.com/dh-proxy/*
+  - glob: harbor.services.mydomain.com/bitnami/*
+  authorities:
+  - static:
+      action: pass
+---
+apiVersion: policy.sigstore.dev/v1beta1
+kind: ClusterImagePolicy
+metadata:
+  name: example-policy
+spec:
+  images:
+  - glob: harbor.services.mydomain.com/tap-apps/*
+  - glob: harbor.services.mydomain.com/tap-apps-dev/*
+  - glob: harbor.services.mydomain.com/tap-apps-prod/*
+  authorities:
+  - key:
+      data: |
+        -----BEGIN PUBLIC KEY-----
+        ...
+        -----END PUBLIC KEY-----

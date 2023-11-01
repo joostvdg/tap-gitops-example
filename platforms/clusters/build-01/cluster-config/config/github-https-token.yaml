@@ -1,0 +1,20 @@
+#@ load("@ytt:data", "data")
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: github-https-token-2
+  namespace: tanzu-sync
+type: Opaque
+stringData:
+  username: #@ data.values.other.sensitive_values.github_https_sync_secret.username
+  password: #@ data.values.other.sensitive_values.github_https_sync_secret.token
+---
+apiVersion: secretgen.carvel.dev/v1alpha1
+kind: SecretExport
+metadata:
+  name: github-https-token-2
+  namespace: tanzu-sync
+spec:
+  toNamespaces:
+  - '*'

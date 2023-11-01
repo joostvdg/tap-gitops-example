@@ -1,0 +1,12 @@
+#@ load("@ytt:data", "data")
+---
+apiVersion: v1
+stringData:
+  ca.crt: #@ data.values.other.sensitive_values.certs.gui.ca
+  tls.crt: #@ data.values.other.sensitive_values.certs.gui.cert
+  tls.key: #@ data.values.other.sensitive_values.certs.gui.key
+kind: Secret
+metadata:
+  name: tap-gui-cert-manual
+  namespace: tap-gui
+type: kubernetes.io/tls

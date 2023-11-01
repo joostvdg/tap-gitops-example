@@ -1,0 +1,150 @@
+---
+kind: Role
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: kapp-controller-role
+  namespace: tanzu-system-registry
+rules:
+- apiGroups: [""]
+  resources: ["configmaps", "services", "secrets", "pods", "serviceaccounts", "persistentvolumeclaims", "persistentvolumes"]
+  verbs: ["*"]
+- apiGroups: ["apps"]
+  resources: ["deployments", "replicasets", "daemonsets", "statefulsets"]
+  verbs: ["*"]
+- apiGroups: ["cert-manager.io"]
+  resources: ["*"]
+  verbs: ["*"]
+- apiGroups: ["projectcontour.io"]
+  resources: ["*"]
+  verbs: ["*"]
+---
+kind: RoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: kapp-controller-role-binding
+  namespace: tanzu-system-registry
+subjects:
+- kind: ServiceAccount
+  name: kapp-controller-sa
+  namespace: tanzu-packages
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: kapp-controller-role
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: harbor
+  namespace: tanzu-system-registry
+spec:
+  secretName: harbor-tls
+  issuerRef:
+    name: vault-issuer
+    kind: "ClusterIssuer"
+  commonName: harbor.services.mydomain.com
+  dnsNames:
+  - harbor.services.mydomain.com
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: harbor-values
+  namespace: tanzu-packages
+stringData:
+  values.yml: |
+    tlsCertificateSecretName: harbor-tls
+    caBundleSecretName: harbor-tls
+    namespace: tanzu-system-registry
+    hostname: harbor.services.mydomain.com
+    port:
+      https: 443
+    logLevel: info
+    enableContourHttpProxy: true
+    harborAdminPassword: REPLACE_ME
+    secretKey: j0Kn0UlfSGzMTBx6
+    database:
+      password: 4Oj0848rTIvzJiMc
+    core:
+      replicas: 1
+      secret: vFib2c87qg1FFZqI
+      xsrfKey: sGn5nIgBQKdwx89tZLO5pTJAqbCwVRU8
+    jobservice:
+      replicas: 1
+      secret: vFib2c87qg1FFZqI
+    registry:
+      replicas: 1
+      secret: vFib2c87qg1FFZqI
+    notary:
+      enabled: true
+    trivy:
+      enabled: true
+      replicas: 1
+      gitHubToken: ""
+      skipUpdate: true
+    persistence:
+      persistentVolumeClaim:
+        registry:
+          storageClass: default
+          accessMode: ReadWriteOnce
+          size: 100Gi
+        jobservice:
+          jobLog:
+            storageClass: default
+            accessMode: ReadWriteOnce
+            size: 10Gi
+          scanDataExports:
+            storageClass: default
+            accessMode: ReadWriteOnce
+            size: 10Gi
+        database:
+          storageClass: default
+          accessMode: ReadWriteOnce
+          size: 10Gi
+        redis:
+          storageClass: default
+          accessMode: ReadWriteOnce
+          size: 5Gi
+        trivy:
+          storageClass: default
+          accessMode: ReadWriteOnce
+          size: 10Gi
+      imageChartStorage:
+        disableredirect: false
+        type: filesystem
+        filesystem:
+          rootdirectory: /storage
+    pspNames: vmware-system-privileged
+    metrics:
+      enabled: false
+      core:
+        path: /metrics
+        port: 8001
+      registry:
+        path: /metrics
+        port: 8001
+      jobservice:
+        path: /metrics
+        port: 8001
+      exporter:
+        path: /metrics
+        port: 8001
+    network:
+      ipFamilies: ["IPv4", "IPv6"]
+
+---
+apiVersion: packaging.carvel.dev/v1alpha1
+kind: PackageInstall
+metadata:
+  name: harbor
+  namespace: tanzu-packages
+spec:
+  serviceAccountName: kapp-controller-sa
+  packageRef:
+    refName: harbor.tanzu.vmware.com
+    versionSelection:
+      constraints: 2.6.3+vmware.1-tkg.1
+  values:
+  - secretRef:
+      name: harbor-values
+      key: values.yml

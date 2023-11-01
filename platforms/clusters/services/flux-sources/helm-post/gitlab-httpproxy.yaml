@@ -1,0 +1,22 @@
+apiVersion: projectcontour.io/v1
+kind: HTTPProxy
+metadata:
+  annotations:
+    projectcontour.io/ingress.class: contour
+  labels:
+    contour.networking.knative.dev/parent: gitlab
+    projectcontour.io/ingress.class: contour
+  name: gitlab
+  namespace: gitlab
+spec:
+  routes:
+  - conditions:
+    enableWebsockets: true
+    permitInsecure: true
+    services:
+    - name: gitlab-webservice-default
+      port: 8181
+  virtualhost:
+    fqdn: gitlab.services.mydomain.com
+    tls:
+      secretName: gitlab-tls

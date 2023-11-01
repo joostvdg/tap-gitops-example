@@ -1,0 +1,136 @@
+#@ load("@ytt:data", "data")
+#@ load("@ytt:base64", "base64")
+#@ load("@ytt:yaml", "yaml")
+
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: gitops-ssh
+  namespace: cyan
+  annotations:
+    tekton.dev/git-0: #@ data.values.other.sensitive_values.gitlab.url
+type: kubernetes.io/basic-auth
+stringData:
+  caFile: #@ data.values.other.sensitive_values.teams.teal.git.ca_cert_data
+  password: #@ data.values.other.sensitive_values.teams.teal.gitlab.password
+  username: #@ data.values.other.sensitive_values.teams.teal.gitlab.username
+---
+apiVersion: v1
+kind: Secret
+type: Opaque
+immutable: true
+metadata:
+  name: cosign
+  namespace: cyan
+stringData:
+  cosign.key: #@ data.values.other.sensitive_values.teams.teal.cosign.key
+  cosign.password: #@ data.values.other.sensitive_values.teams.teal.cosign.password
+  cosign.pub: #@ data.values.other.sensitive_values.teams.teal.cosign.pub
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1beta2
+kind: Kustomization
+metadata:
+  name: cyan
+  namespace: apps
+spec:
+  interval: 5m0s
+  path: ./teams/cyan/build
+  prune: true
+  targetNamespace: cyan
+  sourceRef:
+    kind: GitRepository
+    name: apps
+
+---
+apiVersion: scanning.apps.tanzu.vmware.com/v1beta1
+kind: ScanPolicy
+metadata:
+  name: scan-policy
+  namespace: cyan
+  labels:
+    'app.kubernetes.io/part-of': 'enable-in-gui'
+spec:
+  regoFile: |
+    package main
+
+    # Accepted Values: "Critical", "High", "Medium", "Low", "Negligible", "UnknownSeverity"
+    notAllowedSeverities := ["Critical"]
+    ignoreCves := []
+
+    contains(array, elem) = true {
+      array[_] = elem
+    } else = false { true }
+
+    isSafe(match) {
+      severities := { e | e := match.ratings.rating.severity } | { e | e := match.ratings.rating[_].severity }
+      some i
+      fails := contains(notAllowedSeverities, severities[i])
+      not fails
+    }
+
+    isSafe(match) {
+      ignore := contains(ignoreCves, match.id)
+      ignore
+    }
+
+    deny[msg] {
+      comps := { e | e := input.bom.components.component } | { e | e := input.bom.components.component[_] }
+      some i
+      comp := comps[i]
+      vulns := { e | e := comp.vulnerabilities.vulnerability } | { e | e := comp.vulnerabilities.vulnerability[_] }
+      some j
+      vuln := vulns[j]
+      ratings := { e | e := vuln.ratings.rating.severity } | { e | e := vuln.ratings.rating[_].severity }
+      not isSafe(vuln)
+      msg = sprintf("CVE %s %s %s", [comp.name, vuln.id, ratings])
+    }
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: nuget-config
+  namespace: cyan
+type: service.binding/nugetconfig
+stringData:
+  type: nugetconfig
+  provider: sample
+  nuget.config: |
+    <?xml version="1.0" encoding="utf-8"?>
+    <configuration>
+      <packageSources>
+        <add key="Proxy" value="https://my-nexus.mydomain.com/repository/nuget.org-proxy/index.json" />
+      </packageSources>
+    </configuration>
+---
+apiVersion: tekton.dev/v1beta1
+kind: Pipeline
+metadata:
+  name: developer-defined-tekton-pipeline
+  namespace: cyan
+  labels:
+    apps.tanzu.vmware.com/pipeline: test
+spec:
+  workspaces:
+    - name: shared-workspace
+  params:
+    - name: source-url
+    - name: source-revision
+  tasks:
+    - name: fetch-repository
+      taskRef:
+        name: fluxcd-repo-download
+      workspaces:
+        - name: output
+          workspace: shared-workspace
+      params:
+        - name: source-url  
+          value: $(params.source-url)
+    - name: dotnet-run
+      taskRef:
+        name: dotnet
+      runAfter:
+        - fetch-repository
+      workspaces:
+        - name: source
+          workspace: shared-workspace

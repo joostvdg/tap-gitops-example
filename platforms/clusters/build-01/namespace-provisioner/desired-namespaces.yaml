@@ -1,0 +1,13 @@
+#@data/values
+---
+namespaces:
+#! The only required parameter is the name of the namespace. All additional values provided here 
+#! for a namespace will be available under data.values for templating additional sources
+- name: dev
+- name: qa
+- name: orange
+- name: apps
+- name: teal
+- name: green
+- name: cyan
+- name: demo1

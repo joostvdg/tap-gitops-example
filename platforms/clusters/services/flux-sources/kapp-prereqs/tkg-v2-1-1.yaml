@@ -1,0 +1,11 @@
+apiVersion: packaging.carvel.dev/v1alpha1
+kind: PackageRepository
+metadata:
+  annotations:
+    packaging.carvel.dev/downgradable: "" # because it sorts on the hash...
+  name: standard
+  namespace: tkg-system
+spec:
+  fetch:
+    imgpkgBundle:
+      image: harbor.mydomain.com/tkg/packages/standard/repo:v2.1.1

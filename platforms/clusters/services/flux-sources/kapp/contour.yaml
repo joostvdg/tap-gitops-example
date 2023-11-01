@@ -1,0 +1,82 @@
+---
+kind: Role
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: kapp-controller-role
+  namespace: tanzu-system-ingress
+rules:
+- apiGroups: [""]
+  resources: ["configmaps", "services", "secrets", "pods", "serviceaccounts"]
+  verbs: ["*"]
+- apiGroups: ["apps"]
+  resources: ["deployments", "replicasets", "daemonsets"]
+  verbs: ["*"]
+- apiGroups: ["cert-manager.io"]
+  resources: ["*"]
+  verbs: ["*"]
+---
+kind: RoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: kapp-controller-role-binding
+  namespace: tanzu-system-ingress
+subjects:
+- kind: ServiceAccount
+  name: kapp-controller-sa
+  namespace: tanzu-packages
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: kapp-controller-role
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: contour-values
+  namespace: tanzu-packages
+stringData:
+  values.yml: |
+    infrastructure_provider: vsphere
+    namespace: tanzu-system-ingress
+    contour:
+      useProxyProtocol: false
+      replicas: 2
+      pspNames: "vmware-system-restricted"
+      logLevel: info
+    envoy:
+      service:
+        type: LoadBalancer
+        annotations: {}
+        nodePorts:
+          http: null
+          https: null
+        externalTrafficPolicy: Cluster
+        disableWait: false
+      hostPorts:
+        enable: true
+        http: 80
+        https: 443
+      hostNetwork: false
+      terminationGracePeriodSeconds: 300
+      logLevel: info
+      pspNames: null
+    certificates:
+      duration: 8760h
+      renewBefore: 360h
+
+---
+apiVersion: packaging.carvel.dev/v1alpha1
+kind: PackageInstall
+metadata:
+  name: contour
+  namespace: tanzu-packages
+spec:
+  serviceAccountName: kapp-controller-sa
+  packageRef:
+    refName: contour.tanzu.vmware.com
+    versionSelection:
+      constraints: 1.22.3+vmware.1-tkg.1
+  values:
+  - secretRef:
+      name: contour-values
+      key: values.yml

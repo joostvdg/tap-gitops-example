@@ -1,0 +1,55 @@
+#@ load("@ytt:data", "data")
+#@ load("@ytt:base64", "base64")
+#@ load("@ytt:yaml", "yaml")
+---
+#! GIT SECRET
+apiVersion: v1
+kind: Secret
+metadata:
+  name: teal
+  namespace: teal
+stringData:
+  caFile: #@ data.values.other.sensitive_values.ca_cert_data
+  password: #@ data.values.other.sensitive_values.teams.teal.git.password
+  username: #@ data.values.other.sensitive_values.teams.teal.git.username
+---
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: repo-auth
+  namespace: teal
+stringData:
+  caFile: #@ data.values.other.sensitive_values.ca_cert_data
+  password: #@ data.values.other.sensitive_values.teams.teal.helm.password
+  username: #@ data.values.other.sensitive_values.teams.teal.helm.username
+
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1beta2
+kind: Kustomization
+metadata:
+  name: teal
+  namespace: apps
+spec:
+  interval: 5m0s
+  path: ./teams/teal/prod
+  prune: true
+  targetNamespace: teal
+  sourceRef:
+    kind: GitRepository
+    name: apps
+
+---
+
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: crd-controller-flux-system-teal-sa
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: crd-controller-flux-system
+subjects:
+- kind: ServiceAccount
+  name: default
+  namespace: teal

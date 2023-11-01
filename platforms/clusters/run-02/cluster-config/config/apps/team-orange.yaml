@@ -1,0 +1,29 @@
+#@ load("@ytt:data", "data")
+#@ load("@ytt:base64", "base64")
+#@ load("@ytt:yaml", "yaml")
+---
+#! GIT SECRET
+apiVersion: v1
+kind: Secret
+metadata:
+  name: orange
+  namespace: orange
+stringData:
+  caFile: #@ data.values.other.sensitive_values.teams.orange.git.ca_cert_data
+  password: #@ data.values.other.sensitive_values.teams.orange.git.password
+  username: #@ data.values.other.sensitive_values.teams.orange.git.username
+
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1beta2
+kind: Kustomization
+metadata:
+  name: orange
+  namespace: apps
+spec:
+  interval: 5m0s
+  path: ./teams/orange/prod
+  prune: true
+  targetNamespace: orange
+  sourceRef:
+    kind: GitRepository
+    name: apps

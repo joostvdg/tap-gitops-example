@@ -1,0 +1,45 @@
+#@ load("@ytt:data", "data")
+---
+#@ if data.values.custom.trivy.enabled:
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: trivy
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: trivy-values
+  namespace: tap-install
+stringData:
+  values.yml: |
+    ---
+    metadataStore:
+      url: https://metadata-store.view.mydomain.com
+      caSecret:
+        name: store-ca-cert
+        importFromNamespace: "" #! metadata-store-secrets
+      authSecret:
+        name: store-auth-token
+        importFromNamespace: "" #! metadata-store-secrets
+---
+apiVersion: packaging.carvel.dev/v1alpha1
+kind: PackageInstall
+metadata:
+  name: trivy
+  namespace: tap-install
+  annotations:
+    kapp.k14s.io/change-group: trivy
+    kapp.k14s.io/change-rule.0: "upsert after upserting pkgi"
+    kapp.k14s.io/change-rule.1: "delete before deleting pkgi"
+spec:
+  serviceAccountName: tap-installer-sa
+  packageRef:
+    refName: trivy.scanning.apps.tanzu.vmware.com
+    versionSelection:
+      constraints: #@ data.values.custom.trivy.pkgr_version
+  values:
+  - secretRef:
+      name: trivy-values
+      key: values.yml
+#@ end

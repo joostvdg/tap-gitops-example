@@ -1,0 +1,40 @@
+---
+tap_install:
+  values:
+    profile: view
+    ceip_policy_disclosed: true
+    shared:
+      ingress_domain: view.mydomain.com
+      ca_cert_data: |-
+        -----BEGIN CERTIFICATE-----
+        MIID7jCCAtagAwIBAgIURv5DzXSDklERFu4gL2sQBNeRg+owDQYJKoZIhvcNAQEL
+        ...
+        sDAm0uiUdqs7FZN2uKkLKekdTgW0QkTFEJTk5Yk9t/hOrjnHoWQfB+mLhO3vPhip
+        vhs=
+        -----END CERTIFICATE-----
+    contour:
+      envoy:
+        service:
+          type: LoadBalancer
+
+    metadata_store:
+      tls:
+        namespace: metadata-store
+        secretName: metadata-store-cert-manual
+    tap_gui:
+      tls:
+        namespace: tap-gui
+        secretName: tap-gui-cert-manual
+      metadataStoreAutoconfiguration: true
+      service_type: ClusterIP
+      app_config:
+        backend:
+          reading:
+            allow:
+              - host: "gitea.services.mydomain.com"
+              - host: "gitlab.services.mydomain.com"
+        customize:
+          #! custom_logo: 'BASE-64-IMAGE'
+          custom_name: 'Portal McPortalFace'
+        organization:
+          name: 'Org McOrg Face'

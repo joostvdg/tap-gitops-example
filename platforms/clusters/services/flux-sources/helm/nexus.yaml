@@ -1,0 +1,61 @@
+apiVersion: helm.toolkit.fluxcd.io/v2beta1
+kind: HelmRelease
+metadata:
+  name: nexus
+  namespace: nexus
+spec:
+  interval: 5m
+  timeout: 10m0s
+  chart:
+    spec:
+      chart: nexus-repository-manager
+      version: "55.0.0"
+      sourceRef:
+        kind: HelmRepository
+        name: sonatype
+        namespace: default
+      interval: 5m
+  values:
+    image:
+      repository: harbor.services.mydomain.com/dh-proxy/sonatype/nexus3
+    nexus:
+      resources:
+        requests:
+          cpu: 4
+          memory: 8Gi
+        limits:
+          cpu: 4
+          memory: 8Gi
+    ingress:
+      enabled: false
+---
+apiVersion: projectcontour.io/v1
+kind: HTTPProxy
+metadata:
+  name: nexus
+  namespace: nexus
+spec:
+  ingressClassName: contour
+  virtualhost:
+    fqdn: nexus.services.mydomain.com
+    tls:
+      secretName: nexus-tls
+  routes:
+  - services:
+    - name: nexus-nexus-repository-manager
+      port: 8081
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: gitea-ssh
+  namespace: nexus
+spec:
+  secretName: nexus-tls
+  issuerRef:
+    name: vault-issuer
+    kind: "ClusterIssuer"
+  commonName: nexus.services.mydomain.com
+  dnsNames:
+  - nexus.services.mydomain.com
+---

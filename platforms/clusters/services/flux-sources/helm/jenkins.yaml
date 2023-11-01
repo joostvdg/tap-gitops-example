@@ -1,0 +1,134 @@
+apiVersion: helm.toolkit.fluxcd.io/v2beta1
+kind: HelmRelease
+metadata:
+  name: jenkins
+  namespace: jenkins
+spec:
+  interval: 5m
+  timeout: 25m0s
+  chart:
+    spec:
+      chart: jenkins
+      version: "4.3.28"
+      sourceRef:
+        kind: HelmRepository
+        name: jenkins
+        namespace: default
+      interval: 5m
+  values:
+    controller:
+      componentName: "jenkins-controller"
+      image: "harbor.services.mydomain.com/dh-proxy/jenkins/jenkins"
+      tag: "2.401.1-lts-rhel-ubi9-jdk17"
+      #tagLabel: "jdk17"
+      imagePullPolicy: "Always"
+      disableRememberMe: false
+      numExecutors: 0
+
+      jenkinsUrl: "https://jenkins.services.mydomain.com"
+      installPlugins:
+        - kubernetes
+        - workflow-aggregator
+        - git
+        - configuration-as-code
+
+      # Set to false to download the minimum required version of all dependencies.
+      installLatestPlugins: true
+
+      # Set to true to download latest dependencies of any plugin that is requested to have the latest version.
+      installLatestSpecifiedPlugins: true
+
+      # List of plugins to install in addition to those listed in controller.installPlugins
+      # opentelemetry:2.8.0
+      additionalPlugins: [prometheus,pipeline-graph-view,blueocean,ldap,job-dsl,hashicorp-vault-plugin,kubernetes-credentials,github-checks,matrix-auth,oic-auth,github-branch-source,pipeline-utility-steps,cloudbees-disk-usage-simple,opentelemetry]
+
+      # 'name' is a name of an existing secret in same namespace as jenkins,
+      # 'keyName' is the name of one of the keys inside current secret.
+      # the 'name' and 'keyName' are concatenated with a '-' in between, so for example:
+      # an existing secret "secret-credentials" and a key inside it named "github-password" should be used in Jcasc as ${secret-credentials-github-password}
+      # 'name' and 'keyName' must be lowercase RFC 1123 label must consist of lower case alphanumeric characters or '-',
+      # and must start and end with an alphanumeric character (e.g. 'my-name',  or '123-abc')
+      # additionalExistingSecrets: 
+      #   - name: github-token
+      #     keyName: user
+      #   - name: github-token
+      #     keyName: password
+
+      JCasC:
+        defaultConfig: false
+
+      healthProbes: false
+
+      ingress:
+        enabled: false
+
+      sidecars:
+        # set configAutoReload to false, as it overrides the folder
+        # but set the folder to where the `content-from-git` is mounted
+        # as Jenkins uses that as its location for CasC config
+        configAutoReload:
+          enabled: false
+          folder: /var/jenkins_config/casc_configs/jenkins-casc
+        other: 
+        - name: git-sync
+          # https://github.com/kubernetes/git-sync/blob/master/docs/kubernetes.md
+          # This container pulls git data and publishes it into volume
+          # "content-from-git".  In that volume you will find a symlink
+          # "current" (see -dest below) which points to a checked-out copy of
+          # the master branch (see -branch) of the repo (see -repo).
+          # NOTE: git-sync already runs as non-root.
+          ## gcr.io/k8s-staging-git-sync/git-sync:v3.3.4__linux_amd64
+          ## gcr.io/k8s-staging-git-sync/git-sync@sha256:866599ca98bcde1404b56152d8601888a5d3dae7fc21665155577d607652aa09
+          image: registry.k8s.io/git-sync/git-sync:v3.6.2
+          args:
+            - --repo=https://github.com/joostvdg/jenkins-casc
+            - --branch=minimal
+            - --depth=1
+            - --wait=30
+            - --root=/git
+          volumeMounts:
+            - name: content-from-git
+              mountPath: /git
+
+    persistence:
+      enabled: true
+      storageClass: default
+      volumes:
+      - name: content-from-git
+        emptyDir: {}
+      mounts:
+      - name: content-from-git
+        mountPath: /var/jenkins_config/casc_configs
+        readOnly: true
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: jenkins
+  namespace: jenkins
+spec:
+  secretName: jenkins-tls
+  issuerRef:
+    name: vault-issuer
+    kind: "ClusterIssuer"
+  commonName: jenkins.services.mydomain.com
+  dnsNames:
+  - jenkins.services.mydomain.com
+---
+apiVersion: projectcontour.io/v1
+kind: HTTPProxy
+metadata:
+  name: jenkins
+  namespace: jenkins
+spec:
+  ingressClassName: contour
+  virtualhost:
+    fqdn: jenkins.services.mydomain.com
+    tls:
+      secretName: jenkins-tls
+  routes:
+    - services:
+        - name: jenkins
+          port: 8080
+      conditions:
+        - prefix: /

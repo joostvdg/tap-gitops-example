@@ -1,0 +1,170 @@
+#@ load("@ytt:data", "data")
+#@ load("@ytt:base64", "base64")
+#@ load("@ytt:yaml", "yaml")
+---
+#! GIT SECRET
+apiVersion: v1
+kind: Secret
+metadata:
+  name: teal
+  namespace: teal
+stringData:
+  caFile: #@ data.values.other.sensitive_values.teams.teal.git.ca_cert_data
+  password: #@ data.values.other.sensitive_values.teams.teal.git.password
+  username: #@ data.values.other.sensitive_values.teams.teal.git.username
+
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: gitops-ssh
+  namespace: teal
+  annotations:
+    tekton.dev/git-0: #@ data.values.other.sensitive_values.gitlab.url
+type: kubernetes.io/basic-auth
+stringData:
+  caFile: #@ data.values.other.sensitive_values.teams.teal.git.ca_cert_data
+  password: #@ data.values.other.sensitive_values.teams.teal.gitlab.password
+  username: #@ data.values.other.sensitive_values.teams.teal.gitlab.username
+---
+apiVersion: v1
+kind: Secret
+type: Opaque
+immutable: true
+metadata:
+  name: cosign
+  namespace: teal
+stringData:
+  cosign.key: #@ data.values.other.sensitive_values.teams.teal.cosign.key
+  cosign.password: #@ data.values.other.sensitive_values.teams.teal.cosign.password
+  cosign.pub: #@ data.values.other.sensitive_values.teams.teal.cosign.pub
+---
+kind: Secret
+apiVersion: v1
+metadata:
+  name: slack-webhook
+  namespace: teal
+stringData:
+  url: #@ data.values.other.sensitive_values.teams.teal.slack.webhook
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1beta2
+kind: Kustomization
+metadata:
+  name: teal
+  namespace: apps
+spec:
+  interval: 5m0s
+  path: ./teams/teal/build
+  prune: true
+  targetNamespace: teal
+  sourceRef:
+    kind: GitRepository
+    name: apps
+
+---
+apiVersion: scanning.apps.tanzu.vmware.com/v1beta1
+kind: ScanPolicy
+metadata:
+  name: scan-policy
+  namespace: teal
+  labels:
+    'app.kubernetes.io/part-of': 'enable-in-gui'
+spec:
+  regoFile: |
+    package main
+
+    # Accepted Values: "Critical", "High", "Medium", "Low", "Negligible", "UnknownSeverity"
+    notAllowedSeverities := ["Critical"]
+    ignoreCves := ["CVE-2016-1000027", "CVE-2016-0949","CVE-2017-11291","CVE-2018-12805","CVE-2018-4923","CVE-2021-40719","CVE-2018-25076","GHSA-45hx-wfhj-473x","GHSA-jvfv-hrrc-6q72","CVE-2018-12804","GHSA-36p3-wjmg-h94x","GHSA-36p3-wjmg-h94x","GHSA-6v73-fgf6-w5j7"]
+
+    contains(array, elem) = true {
+      array[_] = elem
+    } else = false { true }
+
+    isSafe(match) {
+      severities := { e | e := match.ratings.rating.severity } | { e | e := match.ratings.rating[_].severity }
+      some i
+      fails := contains(notAllowedSeverities, severities[i])
+      not fails
+    }
+
+    isSafe(match) {
+      ignore := contains(ignoreCves, match.id)
+      ignore
+    }
+
+    deny[msg] {
+      comps := { e | e := input.bom.components.component } | { e | e := input.bom.components.component[_] }
+      some i
+      comp := comps[i]
+      vulns := { e | e := comp.vulnerabilities.vulnerability } | { e | e := comp.vulnerabilities.vulnerability[_] }
+      some j
+      vuln := vulns[j]
+      ratings := { e | e := vuln.ratings.rating.severity } | { e | e := vuln.ratings.rating[_].severity }
+      not isSafe(vuln)
+      msg = sprintf("CVE %s %s %s", [comp.name, vuln.id, ratings])
+    }
+---
+
+apiVersion: tekton.dev/v1beta1
+kind: Pipeline
+metadata:
+  name: developer-defined-tekton-pipeline
+  namespace: teal
+  labels:
+    apps.tanzu.vmware.com/pipeline: test
+spec:
+  workspaces:
+    - name: shared-workspace
+    - name: maven-settings
+  params:
+    - name: source-url
+    - name: source-revision
+  tasks:
+    - name: fetch-repository
+      taskRef:
+        name: fluxcd-repo-download
+      workspaces:
+        - name: output
+          workspace: shared-workspace
+      params:
+        - name: source-url  
+          value: $(params.source-url)
+    - name: maven-run
+      taskRef:
+        name: maven-test-containers
+      runAfter:
+        - fetch-repository
+      params:
+        - name: GOALS
+          value:
+            - clean
+            - verify
+      workspaces:
+        - name: output
+          workspace: shared-workspace
+  finally:
+    - name: notify-build-failure
+      when:
+        - input: $(tasks.maven-run.status)
+          operator: in
+          values: ["Failed"]
+      taskRef:
+        name: send-to-webhook-slack
+      params:
+      - name: webhook-secret
+        value: slack-webhook
+      - name: message
+        value: "Build failed [$(params.source-url) - $(params.source-revision)]"
+    - name: notify-fetch-failure
+      when:
+        - input: $(tasks.fetch-repository.status)
+          operator: in
+          values: ["Failed"]
+      taskRef:
+        name: send-to-webhook-slack
+      params:
+      - name: webhook-secret
+        value: slack-webhook
+      - name: message
+        value: "Cannot fetch repository [$(params.source-url) - $(params.source-revision)]"

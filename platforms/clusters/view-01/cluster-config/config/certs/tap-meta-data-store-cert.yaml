@@ -1,0 +1,12 @@
+#@ load("@ytt:data", "data")
+---
+apiVersion: v1
+stringData:
+  ca.crt: #@ data.values.other.sensitive_values.certs.metadata_store.ca
+  tls.crt: #@ data.values.other.sensitive_values.certs.metadata_store.cert
+  tls.key: #@ data.values.other.sensitive_values.certs.metadata_store.key
+kind: Secret
+metadata:
+  name: metadata-store-cert-manual
+  namespace: metadata-store
+type: kubernetes.io/tls

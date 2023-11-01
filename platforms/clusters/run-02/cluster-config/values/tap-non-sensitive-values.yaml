@@ -1,0 +1,48 @@
+---
+tap_install:
+  values:
+    profile: run
+    shared:
+      ingress_domain: run-02.mydomain.com
+      ca_cert_data: |-
+        -----BEGIN CERTIFICATE-----
+        MIID7jCCAtagAwIBAgIURv5DzXSDklERFu4gL2sQBNeRg+owDQYJKoZIhvcNAQEL
+        ...
+        sDAm0uiUdqs7FZN2uKkLKekdTgW0QkTFEJTk5Yk9t/hOrjnHoWQfB+mLhO3vPhip
+        vhs=
+        -----END CERTIFICATE-----
+
+    supply_chain: basic
+    ootb_supply_chain_basic:
+      registry:
+        server: harbor.services.mydomain.com
+        repository: tap-apps
+    ceip_policy_disclosed: true
+    contour:
+      envoy:
+        service:
+          type: LoadBalancer
+    namespace_provisioner:
+      controller: false
+      gitops_install:
+        ref: origin/main
+        subPath: platforms/clusters/run-02/namespace-provisioner
+        url: git@github.com:joostvdg/tap-gitops-example.git
+        secretRef:
+          name: sync-git-ssh
+          namespace: tanzu-sync
+          create_export: true
+    appliveview_connector:
+      backend:
+        sslDeactivated: true
+        ingressEnabled: true
+        host: appliveview.view.mydomain.com
+
+    crossplane:
+      registryCaBundleConfig:
+        name: ca-bundle-config
+        key: ca-bundle
+
+    excluded_packages:
+      - policy.apps.tanzu.vmware.com
+

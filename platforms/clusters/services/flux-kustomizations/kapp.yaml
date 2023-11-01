@@ -1,0 +1,30 @@
+apiVersion: kustomize.toolkit.fluxcd.io/v1beta2
+kind: Kustomization
+metadata:
+  name: kapp-prereqs
+  namespace: flux-system
+spec:
+  dependsOn:
+    - name: namespaces
+  interval: 3m0s
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./platforms/clusters/services/flux-sources/kapp-prereqs
+  prune: true
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1beta2
+kind: Kustomization
+metadata:
+  name: kapp
+  namespace: flux-system
+spec:
+  dependsOn:
+    - name: namespaces
+    - name: kapp-prereqs
+  interval: 3m0s
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./platforms/clusters/services/flux-sources/kapp
+  prune: true

@@ -1,0 +1,129 @@
+apiVersion: helm.toolkit.fluxcd.io/v2beta1
+kind: HelmRelease
+metadata:
+  name: psql
+  namespace: gitea
+spec:
+  interval: 5m
+  timeout: 10m0s
+  chart:
+    spec:
+      chart: postgresql
+      version: "12.5.7"
+      sourceRef:
+        kind: HelmRepository
+        name: bitnami
+        namespace: default
+      interval: 5m
+  values:
+    global:
+      imageRegistry: harbor.services.mydomain.com
+      postgresql:
+        auth:
+          username: giteaadmin
+          database: bitnami_gitea
+          existingSecret: gitea-credentials
+          secretKeys:
+            adminPasswordKey: password
+            userPasswordKey: password
+    image:
+      repository: dh-proxy/bitnami/postgresql
+
+---
+apiVersion: helm.toolkit.fluxcd.io/v2beta1
+kind: HelmRelease
+metadata:
+  name: gitea
+  namespace: gitea
+spec:
+  interval: 5m
+  timeout: 10m0s
+  chart:
+    spec:
+      chart: gitea
+      version: "0.3.2"
+      sourceRef:
+        kind: HelmRepository
+        name: bitnami
+        namespace: default
+      interval: 5m
+  values:
+    global:
+      imageRegistry: harbor.services.mydomain.com
+    image:
+      repository: dh-proxy/bitnami/gitea
+    postgresql:
+      enabled: false
+    externalDatabase:
+      host: psql-postgresql
+      database: bitnami_gitea
+      user: giteaadmin
+      existingSecret: gitea-credentials
+      existingSecretPasswordKey: password
+    rootURL: https://gitea.services.mydomain.com
+    existingSecret: gitea-credentials
+    adminUsername: giteaadmin
+    service:
+      type: ClusterIP
+    ingress:
+      enabled: false
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: gitea
+  namespace: gitea
+spec:
+  secretName: gitea-tls
+  issuerRef:
+    name: vault-issuer
+    kind: "ClusterIssuer"
+  commonName: gitea.services.mydomain.com
+  dnsNames:
+  - gitea.services.mydomain.com
+---
+apiVersion: projectcontour.io/v1
+kind: HTTPProxy
+metadata:
+  name: gitea
+  namespace: gitea
+spec:
+  ingressClassName: contour
+  virtualhost:
+    fqdn: gitea.services.mydomain.com
+    tls:
+      secretName: gitea-tls
+  routes:
+  - services:
+    - name: gitea
+      port: 80
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: gitea-ssh
+  namespace: gitea
+spec:
+  secretName: gitea-ssh-tls
+  issuerRef:
+    name: vault-issuer
+    kind: "ClusterIssuer"
+  commonName: gitea-ssh.services.mydomain.com
+  dnsNames:
+  - gitea-ssh.services.mydomain.com
+---
+apiVersion: projectcontour.io/v1
+kind: HTTPProxy
+metadata:
+  name: gitea-ssh
+  namespace: gitea
+spec:
+  ingressClassName: contour
+  virtualhost:
+    fqdn: gitea-ssh.services.mydomain.com
+    tls:
+      secretName: gitea-ssh-tls
+  routes:
+  - services:
+    - name: gitea
+      port: 22

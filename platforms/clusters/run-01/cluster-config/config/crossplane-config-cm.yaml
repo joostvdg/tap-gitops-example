@@ -1,0 +1,13 @@
+apiVersion: v1
+data:
+  ca-bundle: |
+    -----BEGIN CERTIFICATE-----
+    MIID7jCCAtagAwIBAgIURv5DzXSDklERFu4gL2sQBNeRg+owDQYJKoZIhvcNAQEL
+    ...
+    sDAm0uiUdqs7FZN2uKkLKekdTgW0QkTFEJTk5Yk9t/hOrjnHoWQfB+mLhO3vPhip
+    vhs=
+    -----END CERTIFICATE-----
+kind: ConfigMap
+metadata:
+  name: ca-bundle-config
+  namespace: crossplane-system

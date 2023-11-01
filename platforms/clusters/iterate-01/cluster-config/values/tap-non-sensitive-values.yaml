@@ -1,0 +1,53 @@
+---
+tap_install:
+  values:
+    profile: iterate
+    ceip_policy_disclosed: true
+    shared:
+      ingress_domain: iterate.mydomain.com
+      ca_cert_data: |-
+        -----BEGIN CERTIFICATE-----
+        MIID7jCCAtagAwIBAgIURv5DzXSDklERFu4gL2sQBNeRg+owDQYJKoZIhvcNAQEL
+        ...
+        sDAm0uiUdqs7FZN2uKkLKekdTgW0QkTFEJTk5Yk9t/hOrjnHoWQfB+mLhO3vPhip
+        vhs=
+        -----END CERTIFICATE-----
+    buildservice:
+      pull_from_kp_default_repo: true
+      exclude_dependencies: true
+      kp_default_repository: "harbor.services.mydomain.com/buildservice/tbs-full-deps"
+
+    supply_chain: basic
+    ootb_supply_chain_basic:
+      registry:
+        server: harbor.services.mydomain.com
+        repository: tap-apps
+    
+    contour:
+      envoy:
+        service:
+          type: LoadBalancer
+
+    image_policy_webhook:
+      allow_unmatched_tags: true
+
+    namespace_provisioner:
+      controller: false
+      gitops_install:
+        ref: origin/main
+        subPath: platforms/clusters/iterate-01/namespace-provisioner
+        url: git@github.com:joostvdg/tap-gitops-example.git
+        secretRef:
+          name: sync-git-ssh
+          namespace: tanzu-sync
+          create_export: true
+
+    appliveview_connector:
+      backend:
+        sslDeactivated: true
+        ingressEnabled: true
+        host: appliveview.view.mydomain.com
+
+    excluded_packages:
+    - scanning.apps.tanzu.vmware.com
+    - grype.scanning.apps.tanzu.vmware.com

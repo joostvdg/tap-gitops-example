@@ -1,0 +1,155 @@
+apiVersion: helm.toolkit.fluxcd.io/v2beta1
+kind: HelmRelease
+metadata:
+  name: ldap
+  namespace: auth
+spec:
+  interval: 5m
+  chart:
+    spec:
+      chart: openldap
+      version: "2.0.4"
+      sourceRef:
+        kind: HelmRepository
+        name: openldap
+        namespace: default
+      interval: 1m
+  values:
+    image:
+      repository: osixia/openldap
+      tag: 1.5.0
+    replicaCount: 1
+    replication:
+      enabled: false
+    phpldapadmin:
+      enabled: false
+    ltb-passwd:
+      enabled: false
+    adminPassword: REPLACE_ME
+    configPassword: REPLACE_ME
+    customLdifFiles:
+      main.ldif: |
+        # define people and groups as category
+        dn: ou=People, dc=example,dc=org
+        objectclass: top
+        objectclass: organizationalunit
+        ou: People
+
+        dn: ou=Groups, dc=example,dc=org
+        objectclass: top
+        objectclass: organizationalunit
+        ou: Groups
+
+        # add Administrator group and add me and admin as members
+        dn: cn=Administrators, ou=Groups,dc=example,dc=org
+        objectclass: top
+        objectclass: groupOfNames
+        cn: Administrators
+        ou: Groups
+        member: uid=admin,ou=People, dc=example,dc=org
+        member: uid=jvandergriendt,ou=People, dc=example,dc=org
+
+        dn: cn=Blue, ou=Groups,dc=example,dc=org
+        objectclass: top
+        objectclass: groupOfNames
+        cn: Blue
+        ou: Groups
+        member: uid=blueadmin,ou=People, dc=example,dc=org
+        member: uid=bluedev,ou=People, dc=example,dc=org
+
+        dn: cn=BlueAdmins, ou=Groups,dc=example,dc=org
+        objectclass: top
+        objectclass: groupOfNames
+        cn: BlueAdmins
+        ou: Groups
+        member: uid=blueadmin,ou=People, dc=example,dc=org
+
+        dn: cn=Green, ou=Groups,dc=example,dc=org
+        objectclass: top
+        objectclass: groupOfNames
+        cn: Green
+        ou: Groups
+        member: uid=greenadmin,ou=People, dc=example,dc=org
+        member: uid=greendev,ou=People, dc=example,dc=org
+
+        dn: cn=GreenAdmins, ou=Groups,dc=example,dc=org
+        objectclass: top
+        objectclass: groupOfNames
+        cn: GreenAdmins
+        ou: Groups
+        member: uid=greenadmin,ou=People, dc=example,dc=org
+
+        dn: cn=Developers, ou=Groups,dc=example,dc=org
+        objectclass: top
+        objectclass: groupOfNames
+        cn: Developers
+        ou: Groups
+        member: uid=bluedev,ou=People, dc=example,dc=org
+        member: uid=greendev,ou=People, dc=example,dc=org
+
+        # add specific people (users)
+        dn: uid=jvandergriendt, ou=People, dc=example,dc=org
+        uid: jvandergriendt
+        cn: joostvdg
+        sn: van der Griendt
+        givenname: Joost
+        objectclass: top
+        objectclass: person
+        objectclass: organizationalPerson
+        objectclass: inetOrgPerson
+        ou: People
+        mail: joostvdg@vmware.com
+        userpassword: REPLACE_ME
+
+        dn: uid=blueadmin, ou=People, dc=example,dc=org
+        uid: blueadmin
+        cn: blueadmin
+        sn: Admin
+        givenname: Blue
+        objectclass: top
+        objectclass: person
+        objectclass: organizationalPerson
+        objectclass: inetOrgPerson
+        ou: People
+        mail: blueadmin@example.org
+        userpassword: REPLACE_ME
+
+        dn: uid=bluedev, ou=People, dc=example,dc=org
+        uid: bluedev
+        cn: bluedev
+        sn: Dev
+        givenname: Blue
+        objectclass: top
+        objectclass: person
+        objectclass: organizationalPerson
+        objectclass: inetOrgPerson
+        ou: People
+        mail: bluedev@example.org
+        userpassword: REPLACE_ME
+
+        # add specific people (users)
+        dn: uid=greenadmin, ou=People, dc=example,dc=org
+        uid: greenadmin
+        cn: greenadmin
+        sn: Admin
+        givenname: Green
+        objectclass: top
+        objectclass: person
+        objectclass: organizationalPerson
+        objectclass: inetOrgPerson
+        ou: People
+        mail: greenadmin@example.org
+        userpassword: REPLACE_ME
+
+        dn: uid=greendev, ou=People, dc=example,dc=org
+        uid: greendev
+        cn: greendev
+        sn: Dev
+        givenname: Green
+        objectclass: top
+        objectclass: person
+        objectclass: organizationalPerson
+        objectclass: inetOrgPerson
+        ou: People
+        mail: greendev@example.org
+        userpassword: REPLACE_ME

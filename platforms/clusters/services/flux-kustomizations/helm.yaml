@@ -1,0 +1,31 @@
+apiVersion: kustomize.toolkit.fluxcd.io/v1beta2
+kind: Kustomization
+metadata:
+  name: helm-prereqs
+  namespace: flux-system
+spec:
+  dependsOn:
+    - name: namespaces
+  interval: 3m0s
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./platforms/clusters/services/flux-sources/helm-prereqs
+  prune: true
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1beta2
+kind: Kustomization
+metadata:
+  name: helm
+  namespace: flux-system
+spec:
+  dependsOn:
+    - name: namespaces
+    - name: helm-prereqs
+    - name: secrets
+  interval: 3m0s
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./platforms/clusters/services/flux-sources/helm
+  prune: true

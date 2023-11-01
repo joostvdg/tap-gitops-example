@@ -1,0 +1,3 @@
+tap_install:
+  package_repository:
+    oci_repository: harbor.services.mydomain.com/tap/tap-packages

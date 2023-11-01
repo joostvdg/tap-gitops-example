@@ -1,0 +1,11 @@
+apiVersion: packaging.carvel.dev/v1alpha1
+kind: PackageRepository
+metadata:
+  annotations:
+    packaging.carvel.dev/downgradable: "" # because it sorts on the hash...
+  name: tanzu-tap-repository
+  namespace: tap-install
+spec:
+  fetch:
+    imgpkgBundle:
+      image: harbor.services.mydomain.com/tap/tap-packages:1.5.2

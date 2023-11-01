@@ -1,0 +1,39 @@
+apiVersion: v1
+kind: Secret
+metadata:
+  name: aws-region
+  namespace: tap-install
+stringData:
+  patch.yaml: |
+    #@ load("@ytt:overlay", "overlay")
+
+    #@overlay/match by=overlay.subset({"kind":"Deployment", "metadata":{ "name": "server"}}),expects="1+"
+    ---
+    spec:
+      template:
+        spec:
+          containers:
+            #@overlay/match by=overlay.subset({"name": "backstage"}), expects="1+"
+            - name: backstage
+              env:
+                #@overlay/append
+                - name: AWS_REGION
+                  value: us-east-1
+                #@overlay/append
+                - name: AWS_ACCESS_KEY_ID
+                  value: CywHGSbzIXcmDHrdDMv1
+                #@overlay/append
+                - name: AWS_SECRET_ACCESS_KEY
+                  value: MbkLfPeMc4c9DvHLqazOkVLgarYHtHkegSAKoi4e
+                #@overlay/append
+                - name: AWSS3_REGION
+                  value: us-east-1
+                #@overlay/append
+                - name: TECHDOCS_AWSS3_ACCESS_KEY_ID_CREDENTIAL
+                  value: CywHGSbzIXcmDHrdDMv1
+                #@overlay/append
+                - name: TECHDOCS_AWSS3_SECRET_ACCESS_KEY_CREDENTIAL
+                  value: MbkLfPeMc4c9DvHLqazOkVLgarYHtHkegSAKoi4e
+
+
+

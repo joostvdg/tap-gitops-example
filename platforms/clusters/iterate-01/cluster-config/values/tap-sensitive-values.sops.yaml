@@ -1,0 +1,25 @@
+tap_install:
+    sensitive_values:
+        shared:
+            image_registry:
+                project_path: ...
+                username: ...
+                password: ...
+sops:
+    kms: []
+    gcp_kms: []
+    azure_kv: []
+    hc_vault: []
+    age:
+        - recipient: ...
+          enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBhYWNUT1pxYm53K3g4UWRJ
+            ...
+            q0POxb2npRWKbNpPAPIHkRm+havXzMW/FPXYwMUrPlRf/eNCI9ga+Q==
+            -----END AGE ENCRYPTED FILE-----
+    lastmodified: "2023-06-20T14:17:25Z"
+    mac: ...
+    pgp: []
+    unencrypted_suffix: _unencrypted
+    version: 3.7.3
