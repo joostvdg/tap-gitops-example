@@ -1,17 +1,17 @@
 apiVersion: data.packaging.carvel.dev/v1alpha1
 kind: Package
 metadata:
-  name: tanzu-java-web-app.tanzu.vmware.com.20240505183957.0.0
+  name: tanzu-java-web-app.tanzu.vmware.com.20240507101852.0.0
 spec:
   refName: tanzu-java-web-app.tanzu.vmware.com
-  version: 20240505183957.0.0
+  version: 20240507101852.0.0
   releaseNotes: |
-    Release v20240505183957.0.0 of package tanzu-java-web-app.tanzu.vmware.com
+    Release v20240507101852.0.0 of package tanzu-java-web-app.tanzu.vmware.com
   template:
     spec:
       fetch:
       - imgpkgBundle:
-          image: harbor.tap1.h2o-2-24224.h2o.vmware.com/tap-apps/tanzu-hello-world5-bundle@sha256:ad121cbac1eee1e9899a41bd61711c93e28a193fc72bc9556f3f02f29b18098c
+          image: harbor.tap1.h2o-2-24224.h2o.vmware.com/tap-apps/tanzu-java-web-app-bundle@sha256:16c5a430365d6630ec1a672555e3aa5dc69c4e7976330e429f4a0d5ca724a77e
       template:
       - ytt:
           paths:
@@ -30,7 +30,7 @@ spec:
         workload_name:
           type: string
           description: Used to generate resource names for HttpRoute and Ingress objects.
-          default: tanzu-hello-world5
+          default: tanzu-java-web-app
         replicas:
           type: integer
           nullable: true
